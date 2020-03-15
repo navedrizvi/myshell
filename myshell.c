@@ -64,6 +64,7 @@ void start_batch_command_processing_from_file(char *fname, char *env[])
     size_t linecap = 0;
     ssize_t numchars;
     FILE *fp = fopen(fname, "r");
+
     while ((numchars = getline(&line, &linecap, fp)) > 0)
     {
         evaluate_command(line, env);
@@ -81,7 +82,6 @@ void evaluate_command(char *user_command, char *env[])
     bg = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
     if (argv[0] == NULL)       //ignore empty lines
         return;
-
     if (!builtin_command(argv, env))
     {
         if ((pid = Fork()) == 0) //child runs user job
@@ -159,12 +159,21 @@ int parseline(char *buf, char **argv)
     int argc;        //stotres number of args
     int bg;          //is a baground job?
 
-    buf[strlen(buf) - 1] = ' ';   // replace trailing \n with space
+    if (buf[strlen(buf) - 1] == '\n')
+    {
+        buf[strlen(buf) - 1] = ' '; // replace trailing \n with space
+    }
+    else
+    {
+        buf[strlen(buf)] = ' ';
+    }
+
     while (*buf && (*buf == ' ')) //ignore leading spaces
         buf++;
 
     /* Build argv */
     argc = 0;
+
     while ((delimiter = strchr(buf, ' ')))
     {
         argv[argc++] = buf;
@@ -173,6 +182,7 @@ int parseline(char *buf, char **argv)
         while (*buf && (*buf == ' ')) //ignore spaces
             buf++;
     }
+
     argv[argc] = NULL;
 
     if (argc == 0) //ignore blank line

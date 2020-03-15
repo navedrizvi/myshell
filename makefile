@@ -14,4 +14,4 @@ utility.o: utility.c
 	$(CC) $(CFLAGS) -c utility.c
 
 clean :
-	rm edit $(objects)
+	rm $(objects)

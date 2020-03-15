@@ -1,0 +1,3 @@
+dir
+echo hello  bye hi
+environ

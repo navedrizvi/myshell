@@ -33,7 +33,7 @@ void quit()
 void pause_input()
 {
     //pause shell operation until "enter" is pressed
-    printf("Paused: press enter to continue\n");
+    printf("Paused: press Enter key to continue\n");
     getchar();
 }
 
@@ -46,11 +46,10 @@ void list_environ_variables(char **env)
 
 void echo(char **arguments)
 {
-    //////WE NEED TO PRINT THIS AS A BLOB, not throught the vector as that would miss variable whitespaces
-    //print user comment and newline
+    //print user comment and newline (multiple spaces/tabs reduced to one)
     *arguments++; //skips user command for echo
     while (*arguments != NULL)
-        printf("%s", *arguments++);
+        printf("%s ", *arguments++);
     printf("\n");
 }
 
@@ -81,6 +80,7 @@ int dir(char *directory)
     {                                            // read directory to block struct
         printf("%s\t", directory_block->d_name); // print contents to stdout
     }
+    printf("\n");
 
     return 0;
 }

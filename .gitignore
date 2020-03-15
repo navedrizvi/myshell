@@ -1,4 +1,7 @@
+*.o
 myshell
 .vscode
 myshell.dSYM
 pseudo.txt
+test
+.DS_Store

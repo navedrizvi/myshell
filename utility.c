@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <fcntl.h>
 
 void print_cmd_error()
 {
@@ -10,38 +12,100 @@ void print_cmd_error()
     write(STDERR_FILENO, error_message, strlen(error_message));
 }
 
-int cd(char *directory)
+int list_directory_contents(char *directory)
 {
-    //issue= you cant cd into by providing absolute path, eg- "\Users\naved\desktop" cant be reached
-    if (chdir(directory) == -1)
+    // list contents in directory
+    DIR *directory_pointer;
+    struct dirent *directory_block;
+    directory_pointer = opendir(directory); // opens directory
+    if (directory_pointer == NULL)
     {
         print_cmd_error();
-        perror("cd error: could not find directory");
-
+        printf("dir error: could not find directory '%s'", directory);
         return -1;
     }
+    while ((directory_block = readdir(directory_pointer)) != NULL)
+    {                                            // read directory to block struct
+        printf("%s\t", directory_block->d_name); // print contents to stdout
+    }
+    printf("\n");
 
     return 0;
 }
 
-void quit()
+int list_directory_contents_output_redirect(char *file_name, char *directory)
 {
-    // exit the shell prompt
-    exit(0);
+    DIR *directory_pointer;
+    struct dirent *directory_block;
+    directory_pointer = opendir(directory); // opens directory
+    if (directory_pointer == NULL)
+    {
+        print_cmd_error();
+        printf("dir error: could not find directory '%s'", directory);
+        return -1;
+    }
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+    while ((directory_block = readdir(directory_pointer)) != NULL)
+    { // read directory to block struct
+        write(out_file_fd, strcat(directory_block->d_name, "\n"), strlen(directory_block->d_name));
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+
+    return 0;
 }
 
-void pause_input()
+int list_directory_contents_output_append_redirect(char *file_name, char *directory)
 {
-    //pause shell operation until "enter" is pressed
-    printf("Paused: press Enter key to continue\n");
-    getchar();
+    DIR *directory_pointer;
+    struct dirent *directory_block;
+    directory_pointer = opendir(directory); // opens directory
+    if (directory_pointer == NULL)
+    {
+        print_cmd_error();
+        printf("dir error: could not find directory '%s'", directory);
+        return -1;
+    }
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+    while ((directory_block = readdir(directory_pointer)) != NULL)
+    { // read directory to block struct
+        write(out_file_fd, strcat(directory_block->d_name, "\n"), strlen(directory_block->d_name));
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+
+    return 0;
 }
 
-void list_environ_variables(char **env)
+void list_environ_variables(char **environment)
 {
-    // prints all environment variables by looping through an array
-    while (*env != NULL)
-        printf("%s\n", *env++);
+    // prints all environment variables by looping through the env array
+    while (*environment != NULL)
+        printf("%s\n", *environment++);
+}
+
+void list_environ_variables_output_redirect(char *file_name, char **environment)
+{
+    // writes all environment variables to a file
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+    while (*environment != NULL)
+    {
+        write(out_file_fd, *environment, strlen(*environment));
+        environment++;
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+    close(out_file_fd);
+}
+
+void list_environ_variables_output_append_redirect(char *file_name, char **environment)
+{
+    // appends all environment variables to a file
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+    while (*environment != NULL)
+    {
+        write(out_file_fd, *environment, strlen(*environment));
+        environment++;
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+    close(out_file_fd);
 }
 
 void echo(char **arguments)
@@ -53,34 +117,76 @@ void echo(char **arguments)
     printf("\n");
 }
 
-void clear_screen()
+void echo_output_redirect(int output_redir_symbol_index, char *file_name, char **relevant_arguments)
 {
-    //////////being weird
-    //terminal gets cleared with cursor positioned at the beginning
-    printf("\033[H\033[J");
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+    *relevant_arguments++;                                                                        //skips user command for echo
+    while (*relevant_arguments != NULL)
+    {
+        write(out_file_fd, strcat(*relevant_arguments, " "), strlen(*relevant_arguments));
+        relevant_arguments++;
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+    close(out_file_fd);
+}
+
+void echo_output_append_redirect(int output_redir_append_symbol_index, char *file_name, char **relevant_arguments)
+{
+    int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+    *relevant_arguments++;                                                                         //skips user command for echo
+    while (*relevant_arguments != NULL)
+    {
+        write(out_file_fd, strcat(*relevant_arguments, " "), strlen(*relevant_arguments));
+        relevant_arguments++;
+    }
+    write(out_file_fd, "\n", 1); // newline for clarity
+    close(out_file_fd);
 }
 
 void help()
 {
 }
 
-int dir(char *directory)
+void quit()
 {
-    // list contents in directory
-    DIR *directory_pointer;
-    struct dirent *directory_block;
-    directory_pointer = opendir(directory); // opens directory
-    if (directory_pointer == NULL)
+    // exit the shell prompt
+    exit(0);
+}
+
+int change_current_directory(char *directory)
+{
+    if (directory == NULL)
+    {
+        printf("please provide directory to change to as an argument\n");
+        printf("current directory: %s\n", getenv("PWD"));
+    }
+    if (chdir(directory) == -1)
     {
         print_cmd_error();
-        perror("dir error: could not find directory");
+        printf("cd error: could not find directory '%s'\n", directory);
+
         return -1;
     }
-    while ((directory_block = readdir(directory_pointer)) != NULL)
-    {                                            // read directory to block struct
-        printf("%s\t", directory_block->d_name); // print contents to stdout
-    }
-    printf("\n");
+    //change PWD environment variable after successful call
 
+    char wd[strlen(getenv("PWD")) + strlen(directory) - 2];
+    strcpy(wd, getenv("PWD"));
+    strcat(wd, "/");
+    strcat(wd, directory);
+    setenv("PWD", wd, 1); //resets PWD
     return 0;
+}
+
+void pause_input()
+{
+    //pause shell operation until "enter" is pressed
+    printf("Paused: press Enter key to continue\n");
+    getchar();
+}
+
+void clear_screen()
+{
+    //////////being weird
+    //terminal gets cleared with cursor positioned at the beginning
+    printf("\033[H\033[J");
 }

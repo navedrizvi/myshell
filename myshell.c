@@ -1,7 +1,8 @@
-/*TODO = 
-mac doesnt have execvpe so change execp in submission - execvpe(argv[0], argv, env) == -1)
+/*TODO: 
+in evaluate_command() 2 times: mac doesnt have execvpe so change execp in submission - execvpe(argv[0], argv, env) == -1)
+
+Background execution
 */
-//Credits for shell skeleton- Bryant & O'Hallaron pg.790-792
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,11 +11,8 @@ mac doesnt have execvpe so change execp in submission - execvpe(argv[0], argv, e
 #include <errno.h>
 #include <string.h>
 #include "myshell.h"
-// #include "utility.c"
-
 #include <dirent.h>
-
-// extern char **environ;
+#include <fcntl.h>
 
 int main(int argc, char *argv[])
 {
@@ -38,10 +36,6 @@ int main(int argc, char *argv[])
         perror("Usage: ./myshell [command]");
         exit(1);
     }
-}
-
-void edit_environment_shell_path()
-{
 }
 
 void start_interactive_command_prompt_loop(char *env[])
@@ -75,89 +69,88 @@ void evaluate_command(char *user_command, char *env[])
 {
     char *argv[MAXARGS];
     char buf[MAXLINE];
-    int bg;
+    int argc;
     pid_t pid;
+    int is_background;
 
     strcpy(buf, user_command);
-    bg = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
-    if (argv[0] == NULL)       //ignore empty lines
+    argc = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
+    if (argv[0] == NULL)         //ignore empty lines
         return;
-    if (!builtin_command(argv, env))
+    if (is_builtin_command_then_execute(argv, env) == 0) //evaluates to true when its external command
     {
-        if ((pid = Fork()) == 0) //child runs user job
+        if ((is_background = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
         {
+            argv[--argc] = NULL;
+        }
+        if ((pid = Fork()) == 0) //child runs the external command
+        {
+            //Check if IO redirection characters are present
+            int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
+            int index_of_output_redir_append_symbol = get_valid_output_append_redirection_index(argv);
+            int index_of_input_redir_symbol = get_valid_input_redirection_index(argv);
+            int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
+
             char shell_path[strlen(getenv("PWD") + 6)];
             strcat(shell_path, "shell=");
             strcat(shell_path, getenv("PWD"));
             strcat(shell_path, "/myshell");
             env[0] = shell_path; // Index 0 is the parent path
-            if (execvp(argv[0], argv) == -1)
+
+            //Execute appropriate command based on redirection
+            if (index_of_input_redir_symbol != -1 && index_of_output_redir_symbol != -1)
             {
-                printf("%s: Command not found\n", argv[0]);
-                exit(0);
+                perform_input_and_output_redirection_external(argv, index_of_input_redir_symbol, index_of_output_redir_symbol);
             }
+            else if (index_of_input_redir_symbol != -1 && index_of_output_redir_append_symbol != -1)
+            {
+                perform_input_and_output_append_redirection_external(argv, index_of_input_redir_symbol, index_of_output_redir_append_symbol);
+            }
+            else
+            {
+                if (index_of_output_redir_symbol != -1)
+                {
+                    perform_output_redirection_external(argv, index_of_output_redir_symbol);
+                }
+                else if (index_of_output_redir_append_symbol != -1)
+                {
+                    perform_output_append_redirection_external(argv, index_of_output_redir_append_symbol);
+                }
+                else if (index_of_input_redir_symbol != -1)
+                {
+                    perform_input_redirection_external(argv, index_of_input_redir_symbol);
+                }
+
+                else
+                {
+                    if (execvp(argv[0], argv) == -1)
+                    {
+                        unix_error("Command not found");
+                    }
+                }
+            }
+
+            exit(0);
         }
 
-        if (!bg) //parent waits for foreground job to terminate
+        //TODO: error here
+        if (is_background == 0) // if job is not background, parent waits for foreground job to terminate
         {
             int status;
             if (waitpid(pid, &status, 0) == -1)
                 unix_error("waitfg: waitpid error");
         }
         else
-            printf("%d %s", pid, user_command);
+            printf("%d %s", pid, strcat(argv[0], "\n"));
+        return;
     }
-
-    return;
 }
 
-/* If first arg is builtin command, run it and return true */
-int builtin_command(char **argv, char *env[])
-{
-    if (!strcmp(argv[0], "quit"))
-        quit();
-    if (!strcmp(argv[0], "dir"))
-    {
-        dir(getenv("PWD"));
-        return 1;
-    }
-    if (!strcmp(argv[0], "cd"))
-    {
-        cd(argv[1]);
-        return 1;
-    }
-    if (!strcmp(argv[0], "pause"))
-    {
-        pause_input();
-        return 1;
-    }
-    if (!strcmp(argv[0], "environ"))
-    {
-        // list_environ_variables(environ);
-        list_environ_variables(env);
-        return 1;
-    }
-    if (!strcmp(argv[0], "echo"))
-    {
-        echo(argv);
-        return 1;
-    }
-    if (!strcmp(argv[0], "clr"))
-    {
-        clear_screen();
-        return 1;
-    }
-    // need for help as well
-    if (!strcmp(argv[0], "&")) //ignore singleton &
-        return 1;
-    return 0;
-}
-
+/* parses user input into argv, returns count of argv */
 int parseline(char *buf, char **argv)
 {
     char *delimiter; //points to first space delimiter
     int argc;        //stotres number of args
-    int bg;          //is a baground job?
 
     if (buf[strlen(buf) - 1] == '\n')
     {
@@ -188,15 +181,394 @@ int parseline(char *buf, char **argv)
     if (argc == 0) //ignore blank line
         return 1;
 
-    if ((bg = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
-        argv[--argc] = NULL;
+    return argc;
+}
 
-    return bg;
+// //TODO: Test
+// int is_background_command(char **argv, int argc)
+// {
+//     int bg;                                   //is a background job?
+//     if ((bg = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
+//     {
+//         argv[--argc] = NULL;
+//     }
+
+//     return bg;
+// }
+
+/* If first arg is builtin command, run it and return true */
+int is_builtin_command_then_execute(char **argv, char *env[])
+{
+    if (strcmp(argv[0], "dir") == 0)
+    {
+        int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
+        int index_of_output_append_redir_symbol = get_valid_output_append_redirection_index(argv);
+        if (index_of_output_redir_symbol != -1)
+        {
+            list_directory_contents_output_redirect(argv[2], getenv("PWD"));
+        }
+        else if (index_of_output_append_redir_symbol != -1)
+        {
+            list_directory_contents_output_append_redirect(argv[2], getenv("PWD"));
+        }
+        else
+        {
+            list_directory_contents(getenv("PWD"));
+        }
+
+        return 1;
+    }
+    if (strcmp(argv[0], "environ") == 0)
+    {
+        int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
+        int index_of_output_append_redir_symbol = get_valid_output_append_redirection_index(argv);
+        if (index_of_output_redir_symbol != -1)
+        {
+            list_environ_variables_output_redirect(argv[2], env);
+        }
+        else if (index_of_output_append_redir_symbol != -1)
+        {
+            list_environ_variables_output_append_redirect(argv[2], env);
+        }
+        else
+        {
+            list_environ_variables(env);
+        }
+
+        return 1;
+    }
+    if (strcmp(argv[0], "echo") == 0)
+    {
+        // char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_symbol);
+        // echo(argv);
+        // return 1;
+        int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
+        int index_of_output_append_redir_symbol = get_valid_output_append_redirection_index(argv);
+
+        if (index_of_output_redir_symbol != -1)
+        {
+            char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_output_redir_symbol);
+            echo_output_redirect(index_of_output_redir_symbol, argv[index_of_output_redir_symbol + 1], relevant_user_arguments_with_command);
+            free(relevant_user_arguments_with_command);
+        }
+        else if (index_of_output_append_redir_symbol != -1)
+        {
+            char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_output_append_redir_symbol);
+            echo_output_redirect(index_of_output_append_redir_symbol, argv[index_of_output_append_redir_symbol + 1], relevant_user_arguments_with_command);
+            free(relevant_user_arguments_with_command);
+        }
+        else
+        {
+            echo(argv);
+        }
+
+        return 1;
+    }
+    // if (strcmp(argv[0], "help") == 0)
+    // {
+    //     help(argv);
+    //     return 1;
+    // }
+    if (strcmp(argv[0], "quit") == 0)
+        quit();
+    if (strcmp(argv[0], "cd") == 0)
+    {
+        change_current_directory(argv[1]);
+        return 1;
+    }
+    if (strcmp(argv[0], "pause") == 0)
+    {
+        pause_input();
+        return 1;
+    }
+
+    if (strcmp(argv[0], "clr") == 0)
+    {
+        clear_screen();
+        return 1;
+    }
+    // need for help as well
+    if (strcmp(argv[0], "&") == 0) //ignore singleton &
+        return 1;
+
+    return 0; //not a built-in command
+}
+
+int get_valid_output_redirection_index(char **argv) // returns index of output redirection symbol if valid
+{
+    char **ptr = argv;
+    char *command = *ptr;
+    ptr++; //go to index 1, to skip the user command
+    int i = 0;
+    while (*ptr != NULL)
+    {
+        i++;
+        if (strcmp(*ptr, ">") == 0)
+        {
+            if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0)
+            {
+                printf("%s is an invalid command for output redirection", command);
+                exit(0);
+            }
+            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            {
+                return i;
+            }
+            else
+            {
+                unix_error("Error: invalid out redirection:");
+            }
+        }
+        ++ptr;
+    }
+    return -1;
+}
+
+int get_valid_output_append_redirection_index(char **argv) // returns index of redirection append symbol if valid
+{
+    char **ptr = argv;
+    char *command = *ptr;
+    ptr++; //go to index 1, to skip the user command
+    int i = 0;
+    while (*ptr != NULL)
+    {
+        i++;
+        if (strcmp(*ptr, ">>") == 0)
+        {
+            if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0)
+            {
+                printf("%s is an invalid command for output redirection", command);
+                exit(0);
+            }
+            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            {
+                return i;
+            }
+            else
+            {
+                unix_error("Error: invalid out redirection:");
+            }
+        }
+        ++ptr;
+    }
+    return -1;
+}
+
+int get_valid_input_redirection_index(char **argv) // returns index of input redirection symbol if valid
+{
+    char **ptr = argv;
+    char *command = *ptr;
+    ptr++; //go to index 1, to skip the user command
+    int i = 0;
+    while (*ptr != NULL)
+    {
+        i++;
+        if (strcmp(*ptr, "<") == 0)
+        {
+            if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0 || strcmp(command, "dir") == 0 || strcmp(command, "environ") == 0 || strcmp(command, "echo") == 0 || strcmp(command, "help") == 0)
+            {
+                printf("%s is an invalid command for output redirection", command);
+                exit(1);
+            }
+            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            {
+                return i;
+            }
+            else
+            {
+                unix_error("Error: invalid out redirection:");
+            }
+        }
+        ++ptr;
+    }
+    return -1;
+}
+
+int get_valid_pipe_symbol_index(char **argv) // returns index of redirection append symbol if valid
+{
+    char **ptr = argv;
+    char *command = *ptr;
+    ptr++; //go to index 1, to skip the user command
+    int i = 0;
+    while (*ptr != NULL)
+    {
+        i++;
+        if (strcmp(*ptr, "|") == 0)
+        {
+            if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0 || strcmp(command, "dir") == 0 || strcmp(command, "environ") == 0 || strcmp(command, "echo") == 0 || strcmp(command, "help") == 0)
+            {
+                printf("%s is an invalid command for output redirection", command);
+                exit(1);
+            }
+            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            {
+                return i;
+            }
+            else
+            {
+                unix_error("Error: invalid out redirection:");
+            }
+        }
+        ++ptr;
+    }
+    return -1;
+}
+
+void perform_output_redirection_external(char **argv, int index_of_symbol)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int out_file_fd = open(argv[index_of_symbol + 1], O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+        dup2(out_file_fd, STDOUT_FILENO);                                                                             //the file discriptor represents the stdout now, so result of exec will output to this file                                                                            //replace stdout with newly created file
+        close(out_file_fd);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_symbol);
+        if (execvp(argv[0], relevant_user_arguments_with_command) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void perform_output_append_redirection_external(char **argv, int index_of_symbol)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int out_file_fd = open(argv[index_of_symbol + 1], O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+        dup2(out_file_fd, STDOUT_FILENO);                                                                              //the file discriptor represents the stdout now, so result of exec will output to this file                                                                            //replace stdout with newly created file
+        close(out_file_fd);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_symbol);
+        if (execvp(argv[0], relevant_user_arguments_with_command) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void perform_input_redirection_external(char **argv, int index_of_symbol)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int in_file_fd;
+        if ((in_file_fd = open(argv[index_of_symbol + 1], O_RDONLY, S_IRWXU | S_IRWXG | S_IRWXO)) == -1) //opens file in read mode, throws error if file doesnt exist
+        {
+            unix_error("Input redirection error: error in reading the input file");
+        }
+        dup2(in_file_fd, STDIN_FILENO); //the file discriptor represents the stdin now, so the file will be stdin for exec                                                                       //replace stdout with newly created file
+        close(in_file_fd);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_symbol);
+        if (execvp(argv[0], relevant_user_arguments_with_command) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void perform_input_and_output_redirection_external(char **argv, int index_of_input_redir_symbol, int index_of_output_redir_symbol)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int in_file_fd;
+        int out_file_fd = open(argv[index_of_output_redir_symbol + 1], O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+        dup2(out_file_fd, STDOUT_FILENO);                                                                                          //the file discriptor represents the stdout now, so result of exec will output to this file                                                                            //replace stdout with newly created file
+        close(out_file_fd);
+        if ((in_file_fd = open(argv[index_of_input_redir_symbol + 1], O_RDONLY, S_IRWXU | S_IRWXG | S_IRWXO)) == -1) //opens file in read mode, throws error if file doesnt exist
+        {
+            unix_error("Input redirection error: error in reading the input file");
+        }
+        dup2(in_file_fd, STDIN_FILENO); //the file discriptor represents the stdin now, so the file will be stdin for exec                                                                       //replace stdout with newly created file
+        close(in_file_fd);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_input_redir_symbol);
+        if (execvp(argv[0], relevant_user_arguments_with_command) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void perform_input_and_output_append_redirection_external(char **argv, int index_of_input_redir_symbol, int index_of_output_append_redir_symbol)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int in_file_fd;
+        int out_file_fd = open(argv[index_of_output_append_redir_symbol + 1], O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+        dup2(out_file_fd, STDOUT_FILENO);                                                                                                  //the file discriptor represents the stdout now, so result of exec will output to this file                                                                            //replace stdout with newly created file
+        close(out_file_fd);
+        if ((in_file_fd = open(argv[index_of_input_redir_symbol + 1], O_RDONLY, S_IRWXU | S_IRWXG | S_IRWXO)) == -1) //opens file in read mode, throws error if file doesnt exist
+        {
+            unix_error("Input redirection error: error in reading the input file");
+        }
+        dup2(in_file_fd, STDIN_FILENO); //the file discriptor represents the stdin now, so the file will be stdin for exec                                                                       //replace stdout with newly created file
+        close(in_file_fd);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_input_redir_symbol);
+        if (execvp(argv[0], relevant_user_arguments_with_command) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void perform_pipe_external(char **argv, int index_of_pipe_symbol)
+{
+}
+
+char **get_relevant_user_arguments_with_command(char **argv, int index_of_symbol)
+{
+    char **output = malloc((index_of_symbol + 1) * sizeof(char *));
+
+    int out_ind = 0;
+    for (int i = 0; i < index_of_symbol; i++)
+    {
+        output[out_ind] = malloc(strlen(argv[i]) * sizeof(char));
+        strcpy(output[out_ind], argv[i]);
+        out_ind++;
+    }
+
+    return output;
 }
 
 void unix_error(char *msg)
 {
-    fprintf(stderr, "%s: %s", msg, strerror(errno));
+    fprintf(stderr, "%s: %s\n", msg, strerror(errno));
     exit(EXIT_FAILURE);
 }
 
@@ -220,74 +592,3 @@ pid_t Fork(void)
     }
     return pid;
 }
-
-// int dir(char *directory)
-// {
-//     // list contents in directory
-//     DIR *directory_pointer;
-//     struct dirent *directory_block;
-//     directory_pointer = opendir(directory); // opens directory
-//     if (directory_pointer == NULL)
-//     {
-//         print_cmd_error();
-//         perror("dir error: could not find directory");
-//         return -1;
-//     }
-//     while ((directory_block = readdir(directory_pointer)) != NULL)
-//     {                                            // read directory to block struct
-//         printf("%s\t", directory_block->d_name); // print contents to stdout
-//     }
-
-//     return 0;
-// }
-
-// int cd(char *directory)
-// {
-//     //issue= you cant cd into by providing absolute path, eg- "\Users\naved\desktop" cant be reached
-//     if (chdir(directory) == -1)
-//     {
-//         print_cmd_error();
-//         perror("cd error: could not find directory");
-
-//         return -1;
-//     }
-
-//     return 0;
-// }
-
-// void print_cmd_error()
-// {
-//     char error_message[30] = "An error has occured\n";
-//     write(STDERR_FILENO, error_message, strlen(error_message));
-// }
-
-// void quit()
-// {
-//     // exit the shell prompt
-//     exit(0);
-// }
-
-// void pause_input()
-// {
-//     //pause shell operation until "enter" is pressed
-//     printf("Paused: press enter to continue\n");
-//     getchar();
-// }
-
-// void list_environ_variables(char **env)
-// {
-//     // prints all environment variables by looping through an array
-//     while (*env != NULL)
-//         printf("%s\n", *env++);
-// }
-
-// void clear_screen()
-// {
-//     //////////being weird
-//     //terminal gets cleared with cursor positioned at the beginning
-//     printf("\033[H\033[J");
-// }
-
-// void help()
-// {
-// }

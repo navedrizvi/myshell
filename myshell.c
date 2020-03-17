@@ -16,6 +16,7 @@ Background execution
 
 int main(int argc, char *argv[])
 {
+    //Create user environment
     char *env[MAXLINE];
     char shell_path[strlen(getenv("PWD") + 6)];
     strcat(shell_path, "shell=");
@@ -27,7 +28,7 @@ int main(int argc, char *argv[])
     {
         start_interactive_command_prompt_loop(env);
     }
-    else if (argc == 2)
+    else if (argc == 2) //When filename is provided as argument
     {
         start_batch_command_processing_from_file(argv[1], env);
     }
@@ -41,6 +42,9 @@ int main(int argc, char *argv[])
 void start_interactive_command_prompt_loop(char *env[])
 {
     char user_command[MAXLINE];
+    char *argv[MAXARGS];
+    char buf[MAXLINE];
+    int argc;
 
     while (1)
     {
@@ -48,34 +52,53 @@ void start_interactive_command_prompt_loop(char *env[])
         Fgets(user_command, MAXLINE, stdin);
         if (feof(stdin))
             exit(0);
-        evaluate_command(user_command, env);
+        strcpy(buf, user_command);
+        argc = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
+        int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
+        if (index_of_pipe_symbol != -1)
+        { // if user command has valid pipe
+            perform_pipe_external(argc, argv, index_of_pipe_symbol, env);
+        }
+        else
+        { //case of no pipe
+            evaluate_command(argc, argv, env);
+        }
     }
 }
 
 void start_batch_command_processing_from_file(char *fname, char *env[])
 {
-    char *line = NULL;
+    char *user_command_line = NULL;
     size_t linecap = 0;
     ssize_t numchars;
     FILE *fp = fopen(fname, "r");
 
-    while ((numchars = getline(&line, &linecap, fp)) > 0)
-    {
-        evaluate_command(line, env);
-    }
-}
-
-void evaluate_command(char *user_command, char *env[])
-{
     char *argv[MAXARGS];
     char buf[MAXLINE];
     int argc;
+
+    while ((numchars = getline(&user_command_line, &linecap, fp)) > 0)
+    {
+        strcpy(buf, user_command_line);
+        argc = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
+        int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
+        if (index_of_pipe_symbol != -1)
+        { // if user command has valid pipe
+            perform_pipe_external(argc, argv, index_of_pipe_symbol, env);
+        }
+        else
+        { //case of no pipe
+            evaluate_command(argc, argv, env);
+        }
+    }
+}
+
+void evaluate_command(int argc, char **argv, char *env[])
+{
     pid_t pid;
     int is_background;
 
-    strcpy(buf, user_command);
-    argc = parseline(buf, argv); //returns 1 if process should be executed in background (command ends with '&')
-    if (argv[0] == NULL)         //ignore empty lines
+    if (argv[0] == NULL) //ignore empty lines
         return;
     if (is_builtin_command_then_execute(argv, env) == 0) //evaluates to true when its external command
     {
@@ -89,7 +112,6 @@ void evaluate_command(char *user_command, char *env[])
             int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
             int index_of_output_redir_append_symbol = get_valid_output_append_redirection_index(argv);
             int index_of_input_redir_symbol = get_valid_input_redirection_index(argv);
-            int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
 
             char shell_path[strlen(getenv("PWD") + 6)];
             strcat(shell_path, "shell=");
@@ -133,7 +155,6 @@ void evaluate_command(char *user_command, char *env[])
             exit(0);
         }
 
-        //TODO: error here
         if (is_background == 0) // if job is not background, parent waits for foreground job to terminate
         {
             int status;
@@ -184,18 +205,6 @@ int parseline(char *buf, char **argv)
     return argc;
 }
 
-// //TODO: Test
-// int is_background_command(char **argv, int argc)
-// {
-//     int bg;                                   //is a background job?
-//     if ((bg = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
-//     {
-//         argv[--argc] = NULL;
-//     }
-
-//     return bg;
-// }
-
 /* If first arg is builtin command, run it and return true */
 int is_builtin_command_then_execute(char **argv, char *env[])
 {
@@ -239,9 +248,6 @@ int is_builtin_command_then_execute(char **argv, char *env[])
     }
     if (strcmp(argv[0], "echo") == 0)
     {
-        // char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_symbol);
-        // echo(argv);
-        // return 1;
         int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
         int index_of_output_append_redir_symbol = get_valid_output_append_redirection_index(argv);
 
@@ -264,11 +270,30 @@ int is_builtin_command_then_execute(char **argv, char *env[])
 
         return 1;
     }
-    // if (strcmp(argv[0], "help") == 0)
-    // {
-    //     help(argv);
-    //     return 1;
-    // }
+    if (strcmp(argv[0], "help") == 0)
+    {
+        int index_of_output_redir_symbol = get_valid_output_redirection_index(argv);
+        int index_of_output_append_redir_symbol = get_valid_output_append_redirection_index(argv);
+
+        if (index_of_output_redir_symbol != -1)
+        {
+            char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_output_redir_symbol);
+            help_output_redirect(index_of_output_redir_symbol, argv[index_of_output_redir_symbol + 1]);
+            free(relevant_user_arguments_with_command);
+        }
+        else if (index_of_output_append_redir_symbol != -1)
+        {
+            char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_output_append_redir_symbol);
+            help_output_append_redirect(index_of_output_append_redir_symbol, argv[index_of_output_append_redir_symbol + 1]);
+            free(relevant_user_arguments_with_command);
+        }
+        else
+        {
+            help();
+        }
+
+        return 1;
+    }
     if (strcmp(argv[0], "quit") == 0)
         quit();
     if (strcmp(argv[0], "cd") == 0)
@@ -547,8 +572,53 @@ void perform_input_and_output_append_redirection_external(char **argv, int index
     }
 }
 
-void perform_pipe_external(char **argv, int index_of_pipe_symbol)
+void perform_pipe_external(int argc, char **argv, char *env[], int index_of_pipe_symbol)
 {
+    int fd[2];
+    int bytes_read;
+    pid_t pid;
+    char buf[BUF_SIZE]; // buffer for output of command 1, supplied as input for command 2 (in parent)
+
+    if (pipe(fd) == -1)
+    {
+        unix_error("Pipe error");
+    }
+    if ((pid = fork()) == -1)
+    {
+        unix_error("Fork error");
+    }
+    else if (pid == 0) //in child process, command 1 executes, which output is read by parent as STDIN
+    {
+        if (close(fd[READ]) == -1)
+        {
+            unix_error("Error in closing the read side of pipe");
+        }
+        dup2(fd[WRITE], STDOUT_FILENO);
+        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_pipe_symbol);
+        if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
+        {
+            unix_error("Execvpe error in pipe 1");
+        }
+    }
+    else //in parent process, command 2 executes, with STDIN provided by child
+    {
+        if (close(fd[WRITE]) == -1)
+        {
+            unix_error("Error in closing the write side of pipe");
+        }
+        dup2(fd[READ], STDIN_FILENO);
+        if ((bytes_read = read(STDIN_FILENO, buf, BUF_SIZE - 1)) == -1)
+        {
+            unix_error("Error reading stdin in pipe");
+        }
+        buf[bytes_read] = '\0'; // add null to terminate string (end buffer)
+        char **relevant_user_arguments_with_command = get_latter_user_command(argc, argv, index_of_pipe_symbol);
+        if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
+        {
+            unix_error("Execvpe error in pipe 2");
+        }
+    }
+    return;
 }
 
 char **get_relevant_user_arguments_with_command(char **argv, int index_of_symbol)
@@ -557,6 +627,21 @@ char **get_relevant_user_arguments_with_command(char **argv, int index_of_symbol
 
     int out_ind = 0;
     for (int i = 0; i < index_of_symbol; i++)
+    {
+        output[out_ind] = malloc(strlen(argv[i]) * sizeof(char));
+        strcpy(output[out_ind], argv[i]);
+        out_ind++;
+    }
+
+    return output;
+}
+
+char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol)
+{
+    char **output = malloc((argc - index_of_pipe_symbol - 1) * sizeof(char *)); //allocate enough space for latter command
+
+    int out_ind = 0;
+    for (int i = index_of_pipe_symbol + 1; i < argc; i++)
     {
         output[out_ind] = malloc(strlen(argv[i]) * sizeof(char));
         strcpy(output[out_ind], argv[i]);

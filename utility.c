@@ -145,6 +145,68 @@ void echo_output_append_redirect(int output_redir_append_symbol_index, char *fil
 
 void help()
 {
+    //Open help file by running more filter
+    pid_t pid;
+    char *args[] = {"more", "README.md", NULL};
+    if ((pid = Fork()) == 0) //child executes
+    {
+        if (execvp("more", args) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void help_output_redirect(int output_redir_symbol_index, char *file_name)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
+        dup2(out_file_fd, STDOUT_FILENO);                                                             //the file discriptor represents the stdout now, so result of exec will output to this file                                                                            //replace stdout with newly created file
+        close(out_file_fd);
+        char *args[] = {"more", "README.md", NULL};
+        if (execvp("more", args) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
+}
+
+void help_output_append_redirect(int output_redir_append_symbol_index, char *file_name)
+{
+    pid_t pid;
+    if ((pid = Fork()) == 0) //child executes
+    {
+        int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
+        dup2(out_file_fd, STDOUT_FILENO);
+        close(out_file_fd);
+        char *args[] = {"more", "README.md", NULL};
+        if (execvp("more", args) == -1)
+        {
+            unix_error("Execvpe error");
+        }
+        exit(0);
+    }
+    else
+    {
+        //Parent process waits for child to finish
+        int status = 0;
+        wait(&status);
+    }
 }
 
 void quit()

@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include "myshell.h"
 
 void print_cmd_error()
 {
@@ -111,7 +112,7 @@ void list_environ_variables_output_append_redirect(char *file_name, char **envir
 void echo(char **arguments)
 {
     //print user comment and newline (multiple spaces/tabs reduced to one)
-    *arguments++; //skips user command for echo
+    arguments++; //skips user command for echo
     while (*arguments != NULL)
         printf("%s ", *arguments++);
     printf("\n");
@@ -120,7 +121,7 @@ void echo(char **arguments)
 void echo_output_redirect(int output_redir_symbol_index, char *file_name, char **relevant_arguments)
 {
     int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU | S_IRWXG | S_IRWXO); //O_WRONLY | O_CREAT | O_APPEND in case of appending, O_RDONLY for input redirection
-    *relevant_arguments++;                                                                        //skips user command for echo
+    relevant_arguments++;                                                                         //skips user command for echo
     while (*relevant_arguments != NULL)
     {
         write(out_file_fd, strcat(*relevant_arguments, " "), strlen(*relevant_arguments));
@@ -133,7 +134,7 @@ void echo_output_redirect(int output_redir_symbol_index, char *file_name, char *
 void echo_output_append_redirect(int output_redir_append_symbol_index, char *file_name, char **relevant_arguments)
 {
     int out_file_fd = open(file_name, O_WRONLY | O_CREAT | O_APPEND, S_IRWXU | S_IRWXG | S_IRWXO); //opens file in append mode, or creates file if doesnt exist
-    *relevant_arguments++;                                                                         //skips user command for echo
+    relevant_arguments++;                                                                          //skips user command for echo
     while (*relevant_arguments != NULL)
     {
         write(out_file_fd, strcat(*relevant_arguments, " "), strlen(*relevant_arguments));

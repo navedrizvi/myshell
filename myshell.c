@@ -84,7 +84,7 @@ void start_batch_command_processing_from_file(char *fname, char *env[])
         int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
         if (index_of_pipe_symbol != -1)
         { // if user command has valid pipe
-            perform_pipe_external(argc, argv, index_of_pipe_symbol, env);
+            perform_pipe_external(argc, argv, env, index_of_pipe_symbol);
         }
         else
         { //case of no pipe
@@ -575,15 +575,13 @@ void perform_input_and_output_append_redirection_external(char **argv, int index
 void perform_pipe_external(int argc, char **argv, char *env[], int index_of_pipe_symbol)
 {
     int fd[2];
-    int bytes_read;
     pid_t ppid;
     pid_t pid;
-    char buf[BUF_SIZE]; // buffer for output of command 1, supplied as input for command 2 (in parent)
     if (pipe(fd) == -1)
     {
         unix_error("Pipe error");
     }
-    if (ppid = Fork() == 0)
+    if ((ppid = Fork()) == 0)
     {
         if ((pid = Fork()) == 0) //in child process, command 1 executes, which output is read by parent as STDIN
         {
@@ -605,7 +603,7 @@ void perform_pipe_external(int argc, char **argv, char *env[], int index_of_pipe
                 unix_error("Error in closing the write side of pipe");
             }
             dup2(fd[READ], STDIN_FILENO);
-            char **relevant_user_arguments_with_command = get_latter_user_command(argc, argv, index_of_pipe_symbol, STDIN_FILENO);
+            char **relevant_user_arguments_with_command = get_latter_user_command(argc, argv, index_of_pipe_symbol);
             if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
             {
                 unix_error("Execvpe error in pipe 2");
@@ -635,7 +633,7 @@ char **get_relevant_user_arguments_with_command(char **argv, int index_of_symbol
     return output;
 }
 
-char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol, int fd)
+char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol)
 {
     char **output = malloc((argc - index_of_pipe_symbol - 1) * sizeof(char *) + sizeof(int)); //allocate enough space for latter command and file discriptor int
 
@@ -646,7 +644,6 @@ char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol, 
         strcpy(output[out_ind], argv[i]);
         out_ind++;
     }
-    output[out_ind] = fd;
 
     return output;
 }
@@ -659,7 +656,6 @@ void unix_error(char *msg)
 
 int Fgets(char *str, int size, FILE *stream)
 {
-    char *input;
     if (fgets(str, size, stream) == NULL)
     {
         unix_error("Fgets error");

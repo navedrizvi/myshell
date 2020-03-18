@@ -28,6 +28,4 @@ int get_valid_pipe_symbol_index(char **argv);
 void perform_input_and_output_redirection_external(char **argv, int index_of_input_redir_symbol, int index_of_output_redir_symbol);
 void perform_input_and_output_append_redirection_external(char **argv, int index_of_input_redir_symbol, int index_of_output_append_redir_symbol);
 void perform_pipe_external(int argc, char **argv, char *env[], int index_of_pipe_symbol);
-char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol);
-
-// evaluate_command(index_of_pipe_symbol, relevant_user_arguments_with_command, env);
+char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol, int fd);

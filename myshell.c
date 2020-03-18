@@ -57,7 +57,7 @@ void start_interactive_command_prompt_loop(char *env[])
         int index_of_pipe_symbol = get_valid_pipe_symbol_index(argv);
         if (index_of_pipe_symbol != -1)
         { // if user command has valid pipe
-            perform_pipe_external(argc, argv, index_of_pipe_symbol, env);
+            perform_pipe_external(argc, argv, env, index_of_pipe_symbol);
         }
         else
         { //case of no pipe
@@ -576,48 +576,47 @@ void perform_pipe_external(int argc, char **argv, char *env[], int index_of_pipe
 {
     int fd[2];
     int bytes_read;
+    pid_t ppid;
     pid_t pid;
     char buf[BUF_SIZE]; // buffer for output of command 1, supplied as input for command 2 (in parent)
-
     if (pipe(fd) == -1)
     {
         unix_error("Pipe error");
     }
-    if ((pid = fork()) == -1)
+    if (ppid = Fork() == 0)
     {
-        unix_error("Fork error");
+        if ((pid = Fork()) == 0) //in child process, command 1 executes, which output is read by parent as STDIN
+        {
+            if (close(fd[READ]) == -1)
+            {
+                unix_error("Error in closing the read side of pipe");
+            }
+            dup2(fd[WRITE], STDOUT_FILENO);
+            char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_pipe_symbol);
+            if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
+            {
+                unix_error("Execvpe error in pipe 1");
+            }
+        }
+        else //in parent process, command 2 executes, with STDIN provided by child
+        {
+            if (close(fd[WRITE]) == -1)
+            {
+                unix_error("Error in closing the write side of pipe");
+            }
+            dup2(fd[READ], STDIN_FILENO);
+            char **relevant_user_arguments_with_command = get_latter_user_command(argc, argv, index_of_pipe_symbol, STDIN_FILENO);
+            if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
+            {
+                unix_error("Execvpe error in pipe 2");
+            }
+        }
+        exit(0);
     }
-    else if (pid == 0) //in child process, command 1 executes, which output is read by parent as STDIN
-    {
-        if (close(fd[READ]) == -1)
-        {
-            unix_error("Error in closing the read side of pipe");
-        }
-        dup2(fd[WRITE], STDOUT_FILENO);
-        char **relevant_user_arguments_with_command = get_relevant_user_arguments_with_command(argv, index_of_pipe_symbol);
-        if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
-        {
-            unix_error("Execvpe error in pipe 1");
-        }
-    }
-    else //in parent process, command 2 executes, with STDIN provided by child
-    {
-        if (close(fd[WRITE]) == -1)
-        {
-            unix_error("Error in closing the write side of pipe");
-        }
-        dup2(fd[READ], STDIN_FILENO);
-        if ((bytes_read = read(STDIN_FILENO, buf, BUF_SIZE - 1)) == -1)
-        {
-            unix_error("Error reading stdin in pipe");
-        }
-        buf[bytes_read] = '\0'; // add null to terminate string (end buffer)
-        char **relevant_user_arguments_with_command = get_latter_user_command(argc, argv, index_of_pipe_symbol);
-        if (execvp(relevant_user_arguments_with_command[0], relevant_user_arguments_with_command) == -1) //execute command one with relevant arguments
-        {
-            unix_error("Execvpe error in pipe 2");
-        }
-    }
+
+    int status;
+    if (waitpid(ppid, &status, 0) == -1)
+        unix_error("waitfg: waitpid error");
     return;
 }
 
@@ -636,9 +635,9 @@ char **get_relevant_user_arguments_with_command(char **argv, int index_of_symbol
     return output;
 }
 
-char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol)
+char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol, int fd)
 {
-    char **output = malloc((argc - index_of_pipe_symbol - 1) * sizeof(char *)); //allocate enough space for latter command
+    char **output = malloc((argc - index_of_pipe_symbol - 1) * sizeof(char *) + sizeof(int)); //allocate enough space for latter command and file discriptor int
 
     int out_ind = 0;
     for (int i = index_of_pipe_symbol + 1; i < argc; i++)
@@ -647,6 +646,7 @@ char **get_latter_user_command(int argc, char **argv, int index_of_pipe_symbol)
         strcpy(output[out_ind], argv[i]);
         out_ind++;
     }
+    output[out_ind] = fd;
 
     return output;
 }

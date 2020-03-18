@@ -1,9 +1,3 @@
-/*TODO: 
-in evaluate_command() 2 times: mac doesnt have execvpe so change execp in submission - execvpe(argv[0], argv, env) == -1)
-
-Background execution
-*/
-
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -100,12 +94,12 @@ void evaluate_command(int argc, char **argv, char *env[])
 
     if (argv[0] == NULL) //ignore empty lines
         return;
+    if ((is_background = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
+    {
+        argv[--argc] = NULL;
+    }
     if (is_builtin_command_then_execute(argv, env) == 0) //evaluates to true when its external command
     {
-        if ((is_background = (*argv[argc - 1] == '&')) != 0) //determine if job should run in background
-        {
-            argv[--argc] = NULL;
-        }
         if ((pid = Fork()) == 0) //child runs the external command
         {
             //Check if IO redirection characters are present
@@ -163,8 +157,8 @@ void evaluate_command(int argc, char **argv, char *env[])
         }
         else
             printf("%d %s", pid, strcat(argv[0], "\n"));
-        return;
     }
+    return;
 }
 
 /* parses user input into argv, returns count of argv */

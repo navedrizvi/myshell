@@ -61,7 +61,7 @@ void start_interactive_command_prompt_loop(char *env[])
             {
                 int status;
                 if (waitpid(pid, &status, 0) == -1)
-                    unix_error("waitfg: waitpid error");
+                    unix_error("waitpid error in processing command");
             }
         }
         else
@@ -97,7 +97,7 @@ void start_batch_command_processing_from_file(char *fname, char *env[])
             {
                 int status;
                 if (waitpid(pid, &status, 0) == -1)
-                    unix_error("waitfg: waitpid error");
+                    unix_error("waitpid error while batch processing");
             }
         }
         else
@@ -173,7 +173,7 @@ void evaluate_command(int argc, char **argv, char *env[])
         {
             int status;
             if (waitpid(pid, &status, 0) == -1)
-                unix_error("waitfg: waitpid error");
+                unix_error("waitpid error in evaluate command");
         }
         else
             printf("%d %s", pid, strcat(argv[0], "\n"));
@@ -376,16 +376,16 @@ int get_valid_output_append_redirection_index(char **argv) // returns index of r
         {
             if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0)
             {
-                printf("%s is an invalid command for output redirection", command);
+                printf("%s is an invalid command for output append redirection", command);
                 exit(0);
             }
-            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            if (*(ptr + 1) != NULL) //its a valid out append redirection since next argument contains output filename
             {
                 return i;
             }
             else
             {
-                unix_error("Error: invalid out redirection:");
+                unix_error("Error: invalid output append redirection");
             }
         }
         ++ptr;
@@ -406,16 +406,16 @@ int get_valid_input_redirection_index(char **argv) // returns index of input red
         {
             if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0 || strcmp(command, "dir") == 0 || strcmp(command, "environ") == 0 || strcmp(command, "echo") == 0 || strcmp(command, "help") == 0)
             {
-                printf("%s is an invalid command for output redirection", command);
+                printf("%s is an invalid command for input redirection", command);
                 exit(1);
             }
-            if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
+            if (*(ptr + 1) != NULL) //its a valid input redirection since next argument contains output filename
             {
                 return i;
             }
             else
             {
-                unix_error("Error: invalid out redirection:");
+                unix_error("Error: invalid input redirection");
             }
         }
         ++ptr;
@@ -436,7 +436,7 @@ int get_valid_pipe_symbol_index(char **argv) // returns index of redirection app
         {
             if (strcmp(command, "cd") == 0 || strcmp(command, "clr") == 0 || strcmp(command, "pause") == 0 || strcmp(command, "quit") == 0 || strcmp(command, "dir") == 0 || strcmp(command, "environ") == 0 || strcmp(command, "echo") == 0 || strcmp(command, "help") == 0)
             {
-                printf("%s is an invalid command for output redirection", command);
+                printf("%s is an invalid command for piping", command);
                 exit(1);
             }
             if (*(ptr + 1) != NULL) //its a valid out redirection since next argument contains output filename
@@ -445,7 +445,7 @@ int get_valid_pipe_symbol_index(char **argv) // returns index of redirection app
             }
             else
             {
-                unix_error("Error: invalid out redirection:");
+                unix_error("Error: invalid piping");
             }
         }
         ++ptr;

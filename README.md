@@ -1,7 +1,7 @@
 ### To run myshell:
 
-1. Open terminal in directory, and run "make".
-2. Enter "./myshell" to run the prompt, or in order to batch process a file follow by the optional filename.
+1. Open terminal in directory, and run 'make' to invoke makefile.
+2. Run the executable './myshell' to run the prompt, or './myshell [file]' to batch process file containing commands.
 
 ### Built-in commands:
 
